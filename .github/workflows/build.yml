@@ -1,0 +1,51 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Read and increment version
+        id: version
+        run: |
+          VERSION=$(cat VERSION)
+          echo "current=$VERSION" >> $GITHUB_OUTPUT
+          IFS='.' read -r major minor patch <<< "$VERSION"
+          patch=$((patch + 1))
+          NEW_VERSION="$major.$minor.$patch"
+          echo "$NEW_VERSION" > VERSION
+          echo "new=$NEW_VERSION" >> $GITHUB_OUTPUT
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Login to Volcengine Registry
+        uses: docker/login-action@v3
+        with:
+          registry: dev-container-cn-beijing.cr.volces.com
+          username: ${{ secrets.VOLC_REGISTRY_USERNAME }}
+          password: ${{ secrets.VOLC_REGISTRY_PASSWORD }}
+      
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            dev-container-cn-beijing.cr.volces.com/vessel/vessel-volc-opencode:v${{ steps.version.outputs.new }}
+            dev-container-cn-beijing.cr.volces.com/vessel/vessel-volc-opencode:latest
+      
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add VERSION
+          git commit -m "Bump version to ${{ steps.version.outputs.new }}"
+          git push
